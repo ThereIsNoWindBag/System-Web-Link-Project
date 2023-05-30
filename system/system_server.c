@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <time.h>
+#include <pthread.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -24,6 +25,19 @@ void five_sec_alarm_handler(int sig)
     printf("%ld seconds\n", clock() / CLOCKS_PER_SEC);
 } 
 
+static void *simple_thread(void* arg)
+{
+    char *s = arg;
+    
+    printf("%s\n", s);
+
+    while(1)
+    {
+        sleep(1);
+    }
+}
+
+
 int system_server()
 {
     struct itimerval itv;
@@ -43,7 +57,18 @@ int system_server()
     itv.it_interval.tv_sec = 5;
     itv.it_interval.tv_usec = 0;
 
+    pthread_t watchdog_thread_tid, monitor_thread_tid, disk_service_thread_tid, camera_service_thread_tid;
+    pthread_attr_t attr;
+
     setitimer(ITIMER_REAL, &itv, NULL);
+
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    pthread_create(&watchdog_thread_tid, &attr, simple_thread, "watchdog thread initiated");
+    pthread_create(&monitor_thread_tid, &attr, simple_thread, "monitor thread initiated");
+    pthread_create(&disk_service_thread_tid, &attr, simple_thread, "disk thread initiated");
+    pthread_create(&camera_service_thread_tid, &attr, simple_thread, "camera thread initiated");
 
     while (1) {
         posix_sleep_ms(5000);

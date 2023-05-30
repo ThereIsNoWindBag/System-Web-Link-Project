@@ -8,11 +8,16 @@
 #include <ucontext.h>
 #include <unistd.h>
 #include <execinfo.h>
+#include <pthread.h>
+#include <signal.h>
 
 #include <system_server.h>
 #include <gui.h>
 #include <input.h>
 #include <web_server.h>
+
+#define TOY_TOK_BUFSIZE 64
+#define TOY_TOK_DELIM " \t\r\n\a"
 
 typedef struct _sig_ucontext {
     unsigned long uc_flags;
@@ -57,13 +62,213 @@ void segfault_handler(int sig_num, siginfo_t * info, void * ucontext) {
   exit(EXIT_FAILURE);
 }
 
+/*
+ *  sensor thread
+ */
+void *sensor_thread(void* arg)
+{
+    char *s = arg;
+
+    printf("%s", s);
+
+    while (1) {
+        posix_sleep_ms(5000);
+    }
+
+    return 0;
+}
+
+/*
+ *  command thread
+ */
+
+int toy_send(char **args);
+int toy_shell(char **args);
+int toy_exit(char **args);
+
+char *builtin_str[] = {
+    "send",
+    "sh",
+    "exit"
+};
+
+int (*builtin_func[]) (char **) = {
+    &toy_send,
+    &toy_shell,
+    &toy_exit
+};
+
+int toy_num_builtins()
+{
+    return sizeof(builtin_str) / sizeof(char *);
+}
+
+int toy_send(char **args)
+{
+    printf("send message: %s\n", args[1]);
+
+    return 1;
+}
+
+int toy_exit(char **args)
+{
+    return 0;
+}
+
+int toy_shell(char **args)
+{
+    pid_t pid;
+    int status;
+
+    pid = fork();
+    if (pid == 0) {
+        if (execvp(args[0], args) == -1) {
+            perror("toy");
+        }
+        exit(EXIT_FAILURE);
+    } else if (pid < 0) {
+        perror("toy");
+    } else
+{
+        do
+        {
+            waitpid(pid, &status, WUNTRACED);
+        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+    }
+
+    return 1;
+}
+
+int toy_execute(char **args)
+{
+    int i;
+
+    if (args[0] == NULL) {
+        return 1;
+    }
+
+    for (i = 0; i < toy_num_builtins(); i++) {
+        if (strcmp(args[0], builtin_str[i]) == 0) {
+            return (*builtin_func[i])(args);
+        }
+    }
+
+    return 1;
+}
+
+char *toy_read_line(void)
+{
+    char *line = NULL;
+    ssize_t bufsize = 0;
+
+    if (getline(&line, &bufsize, stdin) == -1) {
+        if (feof(stdin)) {
+            exit(EXIT_SUCCESS);
+        } else {
+            perror(": getline\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    return line;
+}
+
+char **toy_split_line(char *line)
+{
+    int bufsize = TOY_TOK_BUFSIZE, position = 0;
+    char **tokens = malloc(bufsize * sizeof(char *));
+    char *token, **tokens_backup;
+
+    if (!tokens) {
+        fprintf(stderr, "toy: allocation error\n");
+        exit(EXIT_FAILURE);
+    }
+
+    token = strtok(line, TOY_TOK_DELIM);
+    while (token != NULL) {
+        tokens[position] = token;
+        position++;
+
+        if (position >= bufsize) {
+            bufsize += TOY_TOK_BUFSIZE;
+            tokens_backup = tokens;
+            tokens = realloc(tokens, bufsize * sizeof(char *));
+            if (!tokens) {
+                free(tokens_backup);
+                fprintf(stderr, "toy: allocation error\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        token = strtok(NULL, TOY_TOK_DELIM);
+    }
+    tokens[position] = NULL;
+    return tokens;
+}
+
+void toy_loop(void)
+{
+    char *line;
+    char **args;
+    int status;
+
+    do {
+        printf("TOY>");
+        line = toy_read_line();
+        args = toy_split_line(line);
+        status = toy_execute(args);
+
+        free(line);
+        free(args);
+    } while (status);
+}
+
+void *command_thread(void* arg)
+{
+    char *s = arg;
+
+    printf("%s\n", s);
+
+    toy_loop();
+
+    return 0;
+}
+
+static void *
+simple_thread(void* arg)
+{
+    char *s = arg;
+    
+    printf("%s\n", s);
+
+    while(1)
+    {
+        sleep(1);
+    }
+}
+
 int input()
 {
     printf("나 input 프로세스!\n");
 
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sigaction));
+    sigemptyset(&sa.sa_mask);
+
+    sa.sa_flags = SA_RESTART | SA_SIGINFO;
+    sa.sa_sigaction = segfault_handler;
+
     // input 프로세스에 seg_fault 시그널이 왔을 때 위의 코드를 실행
-    if (signal(SIGSEGV, segfault_handler) == SIG_ERR)
-        perror("signal");
+    sigaction(SIGSEGV, &sa, NULL); /* ignore whether it works or not */
+
+    pthread_t command_thread_tid, sensor_thread_tid;
+    pthread_attr_t attr;
+
+      pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    pthread_create(&command_thread_tid, &attr, command_thread, "command thread initiated");
+    pthread_create(&sensor_thread_tid, &attr, simple_thread, "sensor thread initiated");
+
 
     while (1) {
         sleep(1);
