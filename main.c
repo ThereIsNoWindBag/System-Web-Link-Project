@@ -8,10 +8,10 @@
 #include <web_server.h>
 
 // 자식 프로세스로부터 SIGCHLD 시그널이 왔을 때 핸들러
-// ¿ 핸들러 내부에서 반환된 자식 프로세스의 PID를 출력할 수 있으면 좋을텐데... ?
-static void sigchldHandler(int sig)
+static void sigchldHandler(int signum, siginfo_t *info, void *context)
 {
-    printf("handler: Caught SIGCHLD : %d\n", sig);
+    printf("handler: Caught SIGCHLD : %d\n", signum);
+    printf("handler: dead process' PID : %d\n", info->si_pid);
     printf("handler: returning\n");
 }
 
@@ -20,7 +20,12 @@ int main()
     pid_t spid, wpid, ipid, gpid;
     int status, savedErrno;
 
-    signal(SIGCHLD, sigchldHandler);
+    struct sigaction sa;
+    sa.sa_sigaction = sigchldHandler;
+    sa.sa_flags = SA_SIGINFO;
+
+    // Register the signal handler for SIGCHLD
+    sigaction(SIGCHLD, &sa, NULL);
 
     printf("메인 함수입니다.\n");
     
@@ -33,10 +38,10 @@ int main()
     printf("GUI를 생성합니다.\n");
     gpid = create_gui();
 
-    waitpid(spid, &status, 0);
-    waitpid(wpid, &status, 0);
-    waitpid(ipid, &status, 0);
-    waitpid(gpid, &status, 0);
+    for(int i = 0; i < 4; i++)
+    {
+        waitpid(0, &status, 0);
+    }
 
     return 0;
 }
