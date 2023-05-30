@@ -10,6 +10,6 @@
 #include <string.h>     /* Commonly used string-handling functions */
 #include <stdbool.h>    /* 'bool' type plus 'true' and 'false' constants */
 
-int create_system_server();
+pid_t create_system_server();
 
 #endif /* _SYSTEM_SERVER_H */

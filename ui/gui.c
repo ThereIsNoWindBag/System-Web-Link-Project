@@ -5,11 +5,18 @@
 #include <input.h>
 #include <web_server.h>
 
-int create_gui()
+pid_t create_gui()
 {
-    pid_t systemPid;
+    pid_t gui_pid;
 
     printf("여기서 GUI 프로세스를 생성합니다.\n");
+    sleep(3);
+    gui_pid = fork();
 
-    return 0;
+    if(gui_pid == 0)
+    {
+        execl("/usr/bin/google-chrome-stable", "google-chrome-stable", "http://localhost:8282", NULL);
+    }
+
+    return gui_pid;
 }

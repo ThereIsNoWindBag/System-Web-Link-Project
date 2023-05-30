@@ -5,11 +5,19 @@
 #include <input.h>
 #include <web_server.h>
 
-int create_web_server()
+const char *FILEBROWSER_LOC = "/usr/local/bin/filebrowser";
+
+pid_t create_web_server()
 {
-    pid_t systemPid;
+    pid_t web_pid;
 
     printf("여기서 Web Server 프로세스를 생성합니다.\n");
+    web_pid = fork();
 
-    return 0;
+    if(web_pid == 0)
+    {
+        execl(FILEBROWSER_LOC, "filebrowser", "-p", "8282", (char *) NULL);
+    }
+
+    return web_pid;
 }

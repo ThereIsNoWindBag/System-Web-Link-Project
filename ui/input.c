@@ -17,12 +17,18 @@ int input()
     return 0;
 }
 
-int create_input()
+pid_t create_input()
 {
-    pid_t systemPid;
+    pid_t input_pid;
     const char *name = "input";
 
     printf("여기서 input 프로세스를 생성합니다.\n");
+    input_pid = fork();
 
-    return 0;
+    if(input_pid == 0)
+    {
+        input();
+    }
+
+    return input_pid;
 }
