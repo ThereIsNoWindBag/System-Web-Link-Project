@@ -287,6 +287,7 @@ pid_t create_input()
 
     if(input_pid == 0)
     {
+        prctl(PR_SET_NAME, name, NULL, NULL, NULL);
         input();
     }
 

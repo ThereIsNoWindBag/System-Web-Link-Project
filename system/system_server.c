@@ -37,7 +37,6 @@ static void *simple_thread(void* arg)
     }
 }
 
-
 int system_server()
 {
     struct itimerval itv;
@@ -49,7 +48,8 @@ int system_server()
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sa.sa_handler = five_sec_alarm_handler;
-    sigaction(SIGALRM, &sa, NULL);
+    // 타이머 핸들러 주석 처리
+    // sigaction(SIGALRM, &sa, NULL);
     // signal(SIGALRM, five_sec_alarm_handler);
 
     itv.it_value.tv_sec = 1; // 이걸 0으로 하면 문제가 발생한다. 왜일까?
@@ -57,10 +57,10 @@ int system_server()
     itv.it_interval.tv_sec = 5;
     itv.it_interval.tv_usec = 0;
 
+    setitimer(ITIMER_REAL, &itv, NULL);
+
     pthread_t watchdog_thread_tid, monitor_thread_tid, disk_service_thread_tid, camera_service_thread_tid;
     pthread_attr_t attr;
-
-    setitimer(ITIMER_REAL, &itv, NULL);
 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
@@ -87,6 +87,7 @@ pid_t create_system_server()
 
     if(system_pid == 0)
     {
+        prctl(PR_SET_NAME, name, NULL, NULL, NULL);
         system_server();
     }
 
