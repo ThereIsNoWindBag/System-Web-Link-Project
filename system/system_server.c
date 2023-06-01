@@ -5,6 +5,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <mqueue.h>
+#include <semaphore.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -25,13 +26,18 @@ static mqd_t disk_queue;
 static mqd_t camera_queue;
 
 static int toy_timer = 0;
-
-void signal_exit(void);
+static sem_t global_timer_sem;
+static bool global_timer_stopped;
 
 static void timer_expire_signal_handler()
 {
+    sem_post(&global_timer_sem);
+}
+
+static void system_timeout_handler()
+{
     toy_timer++;
-    signal_exit();
+    printf("toy_timer: %d\n", toy_timer);
 }
 
 void set_periodic_timer(long sec_delay, long usec_delay)
@@ -42,6 +48,19 @@ void set_periodic_timer(long sec_delay, long usec_delay)
     };
 
 	setitimer(ITIMER_REAL, &itimer_val, (struct itimerval*)0);
+}
+
+static void *timer_thread(void *not_used)
+{
+    signal(SIGALRM, timer_expire_signal_handler);
+    set_periodic_timer(1, 0);
+
+	while (!global_timer_stopped) {
+        sem_wait(&global_timer_sem);
+		system_timeout_handler();
+	}
+
+	return 0;
 }
 
 int posix_sleep_ms(unsigned int timeout_ms)
@@ -129,54 +148,35 @@ void *camera_service_thread(void* arg)
     return 0;
 }
 
-void signal_exit(void)
-{
-    /* 여기에 구현하세요..  종료 메시지를 보내도록.. */
-    pthread_mutex_lock(&system_loop_mutex);
-    system_loop_exit = true;
-    pthread_cond_signal(&system_loop_cond);
-    pthread_mutex_unlock(&system_loop_mutex);
-}
-
 int system_server()
 {
-    struct itimerval itv;
-    struct sigaction sa;
-
     printf("나 system_server 프로세스!\n");
 
-    /* 5초 타이머를 만들어 봅시다. */
-    signal(SIGALRM, timer_expire_signal_handler);
-    /* 10초 타이머 등록 */
-    set_periodic_timer(10, 0);
+    sem_init(&global_timer_sem, 0, 0);
 
+    // 각 쓰레드를 위한 메세지 큐 생성
     watchdog_queue = mq_open("/watchdog_queue", O_RDWR);
     monitor_queue = mq_open("/monitor_queue", O_RDWR);
     disk_queue = mq_open("/disk_queue", O_RDWR);
     camera_queue = mq_open("/camera_queue", O_RDWR);
 
-    pthread_t watchdog_thread_tid, monitor_thread_tid, disk_service_thread_tid, camera_service_thread_tid;
+    // 쓰레드용 변수
+    pthread_t watchdog_thread_tid, monitor_thread_tid, disk_service_thread_tid, camera_service_thread_tid, timer_thread_tid;
     pthread_attr_t attr;
 
+    // 쓰레드 설정
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
+    // 쓰레드 생성
     pthread_create(&watchdog_thread_tid, &attr, watchdog_thread, "watchdog thread initiated");
     pthread_create(&monitor_thread_tid, &attr, monitor_thread, "monitor thread initiated");
     pthread_create(&disk_service_thread_tid, &attr, disk_service_thread, "disk thread initiated");
     pthread_create(&camera_service_thread_tid, &attr, camera_service_thread, "camera thread initiated");
-
-    // 여기에 구현하세요... 여기서 cond wait로 대기한다. 10초 후 알람이 울리면 <== system 출력
-    // /* 1초 마다 wake-up 한다 */
-    pthread_mutex_lock(&system_loop_mutex);
-    while (system_loop_exit == false) {
-        pthread_cond_wait(&system_loop_cond, &system_loop_mutex);
-    }
-    printf("10 seconds elapsed!\n");
-    pthread_mutex_unlock(&system_loop_mutex);
+    pthread_create(&timer_thread_tid, &attr, timer_thread, "timer thread\n");
 
     while (1) {
-        posix_sleep_ms(5000);
+        posix_sleep_ms(10000);
     }
 
     return 0;
@@ -184,17 +184,23 @@ int system_server()
 
 pid_t create_system_server()
 {
+    printf("여기서 시스템 프로세스를 생성합니다.\n");
+
+    // 변수 선언
     pid_t system_pid;
     const char *name = "system_server";
 
-    printf("여기서 시스템 프로세스를 생성합니다.\n");
+    // fork() 분기
     system_pid = fork();
 
+    // 자식이면 프로세스 이름 바꾸고
+    // system_server()로 진입
     if(system_pid == 0)
     {
         prctl(PR_SET_NAME, name, NULL, NULL, NULL);
         system_server();
     }
 
+    // 부모면 안녕~
     return system_pid;
 }
