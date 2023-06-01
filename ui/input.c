@@ -29,8 +29,6 @@ typedef struct _sig_ucontext {
 } sig_ucontext_t;
 
 static pthread_mutex_t global_message_mutex  = PTHREAD_MUTEX_INITIALIZER;
-
-// global_message <~ 모든 문제를 만드는 전역 변수
 static char global_message[TOY_BUFFSIZE];
 
 void segfault_handler(int sig_num, siginfo_t * info, void * ucontext) {
@@ -78,20 +76,8 @@ void *sensor_thread(void* arg)
     printf("%s", s);
 
     while (1) {
-        i = 0;
-        // 여기서 뮤텍스
-        // 과제를 억지로 만들기 위해 한 글자씩 출력 후 슬립
-        pthread_mutex_lock(&global_message_mutex);
-        while (global_message[i] != NULL) {
-            printf("%c", global_message[i]);
-            fflush(stdout);
-            posix_sleep_ms(500);
-            i++;
-        }
-        pthread_mutex_unlock(&global_message_mutex);
         posix_sleep_ms(5000);
     }
-
 
     return 0;
 }
@@ -270,16 +256,47 @@ void *command_thread(void* arg)
     return 0;
 }
 
-static void *
-simple_thread(void* arg)
-{
-    char *s = arg;
-    
-    printf("%s\n", s);
+// lab 9: 토이 생산자 소비자 실습
+// 임시로 추가
+#define MAX 30
+#define NUMTHREAD 3 /* number of threads */
 
-    while(1)
-    {
-        sleep(1);
+char buffer[TOY_BUFFSIZE];
+int read_count = 0, write_count = 0;
+int buflen;
+pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t empty = PTHREAD_COND_INITIALIZER;
+int thread_id[NUMTHREAD] = {0, 1, 2};
+int producer_count = 0, consumer_count = 0;
+
+void *toy_consumer(int *id)
+{
+    pthread_mutex_lock(&count_mutex);
+    while (consumer_count < MAX) {
+        pthread_cond_wait(&empty, &count_mutex);
+        // 큐에서 하나 꺼낸다.
+        printf("                           소비자[%d]: %c\n", *id, buffer[read_count]);
+        read_count = (read_count + 1) % TOY_BUFFSIZE;
+        fflush(stdout);
+        consumer_count++;
+    }
+    pthread_mutex_unlock(&count_mutex);
+}
+
+void *toy_producer(int *id)
+{
+    while (producer_count < MAX) {
+        pthread_mutex_lock(&count_mutex);
+        strcpy(buffer, "");
+        buffer[write_count] = global_message[write_count % buflen];
+        // 큐에 추가한다.
+        printf("%d - 생산자[%d]: %c \n", producer_count, *id, buffer[write_count]);
+        fflush(stdout);
+        write_count = (write_count + 1) % TOY_BUFFSIZE;
+        producer_count++;
+        pthread_cond_signal(&empty);
+        pthread_mutex_unlock(&count_mutex);
+        sleep(rand() % 3);
     }
 }
 
@@ -304,8 +321,17 @@ int input()
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
     pthread_create(&command_thread_tid, &attr, command_thread, "command thread initiated");
-    pthread_create(&sensor_thread_tid, &attr, simple_thread, "sensor thread initiated");
+    pthread_create(&sensor_thread_tid, &attr, sensor_thread, "sensor thread initiated");
 
+    /* 생산자 소비자 실습 */
+    pthread_t thread[NUMTHREAD];
+    pthread_mutex_lock(&global_message_mutex);
+    strcpy(global_message, "hello world!");
+    buflen = strlen(global_message);
+    pthread_mutex_unlock(&global_message_mutex);
+    pthread_create(&thread[0], NULL, (void *)toy_consumer, &thread_id[0]);
+    pthread_create(&thread[1], NULL, (void *)toy_producer, &thread_id[1]);
+    pthread_create(&thread[2], NULL, (void *)toy_producer, &thread_id[2]);
 
     while (1) {
         sleep(1);
