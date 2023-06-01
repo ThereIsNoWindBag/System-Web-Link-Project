@@ -12,16 +12,20 @@
 #include <signal.h>
 #include <mqueue.h>
 #include <assert.h>
+#include <sys/shm.h>
 
 #include <system_server.h>
 #include <gui.h>
 #include <input.h>
 #include <web_server.h>
 #include <toy_message.h>
+#include <shared_memory.h>
 
 #define TOY_TOK_BUFSIZE 64
 #define TOY_TOK_DELIM " \t\r\n\a"
 #define TOY_BUFFSIZE 1024
+
+static int shmid;
 
 typedef struct _sig_ucontext {
     unsigned long uc_flags;
@@ -79,11 +83,39 @@ void segfault_handler(int sig_num, siginfo_t * info, void * ucontext) {
  */
 void *sensor_thread(void* arg)
 {
+    int mqretcode;
     char *s = arg;
+    toy_msg_t msg;
 
     printf("%s", s);
 
+    void *addr = shmat(shmid, NULL, 0);
+
+    // send shm_key
+    msg.msg_type = 1;
+    msg.param1 = shmid;
+    msg.param2 = 0;
+    mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
+    assert(mqretcode == 0);
+
+    shm_sensor_t data;
+    data.temp = 0;
+    data.press = 0;
+    data.humidity = 0;
+
     while (1) {
+        memcpy(addr, &data, sizeof(shm_sensor_t));
+        
+        msg.msg_type = 2;
+        msg.param1 = 0;
+        msg.param2 = 0;
+        mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
+        assert(mqretcode == 0);
+
+        data.temp++;
+        data.press += 2;
+        data.humidity += 4;
+
         posix_sleep_ms(5000);
     }
 
@@ -301,6 +333,8 @@ int input()
 
     // input 프로세스에 seg_fault 시그널이 왔을 때 위의 코드를 실행
     sigaction(SIGSEGV, &sa, NULL); /* ignore whether it works or not */
+
+    shmid = shmget(IPC_PRIVATE, sizeof(shm_sensor_t), IPC_CREAT | 0666);
 
     watchdog_queue = mq_open("/watchdog_queue", O_RDWR);
     monitor_queue = mq_open("/monitor_queue", O_RDWR);

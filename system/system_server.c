@@ -6,6 +6,8 @@
 #include <pthread.h>
 #include <mqueue.h>
 #include <semaphore.h>
+#include <sys/shm.h>
+#include <assert.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -15,6 +17,7 @@
 #include <camera_HAL.hpp>
 
 #include <toy_message.h>
+#include <shared_memory.h>
 
 pthread_mutex_t system_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  system_loop_cond  = PTHREAD_COND_INITIALIZER;
@@ -88,16 +91,41 @@ void *watchdog_thread(void* arg)
     return 0;
 }
 
+#define SENSOR_DATA 2
+
 void *monitor_thread(void* arg)
 {
     char *s = arg;
     int mqretcode;
     toy_msg_t msg;
+    int shmid;
 
     printf("%s", s);
 
+    mqretcode = (int)mq_receive(monitor_queue, (void *)&msg, sizeof(toy_msg_t), 0);
+    assert(mqretcode >= 0);
+    shmid = msg.param1;
+
+    void *addr = shmat(shmid, NULL, 0);
+
+    shm_sensor_t data;
+
     while (1) {
-        mq_receive(monitor_queue, (char *) &msg, sizeof msg, NULL);
+        mqretcode = (int)mq_receive(monitor_queue, (void *)&msg, sizeof(toy_msg_t), 0);
+        assert(mqretcode >= 0);
+
+        printf("monitor_thread: 메시지가 도착했습니다.\n");
+        printf("msg.type: %d\n", msg.msg_type);
+        printf("msg.param1: %d\n", msg.param1);
+        printf("msg.param2: %d\n", msg.param2);
+
+        if (msg.msg_type == SENSOR_DATA) {
+            memcpy(&data, addr, sizeof(shm_sensor_t));
+
+            printf("temp: %d\n", data.temp);
+            printf("press: %d\n", data.press);
+            printf("humidity: %d\n", data.humidity);
+        }
     }
 
     return 0;
