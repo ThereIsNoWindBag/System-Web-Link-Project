@@ -13,6 +13,7 @@
 #include <mqueue.h>
 #include <assert.h>
 #include <sys/shm.h>
+#include <sys/mman.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -130,6 +131,7 @@ int toy_send(char **args);
 int toy_mutex(char **args);
 int toy_shell(char **args);
 int toy_message_queue(char **args);
+int toy_read_elf_header(char **args);
 int toy_exit(char **args);
 
 char *builtin_str[] = {
@@ -137,6 +139,7 @@ char *builtin_str[] = {
     "mu",
     "sh",
     "mq",
+    "elf",
     "exit"
 };
 
@@ -145,6 +148,7 @@ int (*builtin_func[]) (char **) = {
     &toy_mutex,
     &toy_shell,
     &toy_message_queue,
+    &toy_read_elf_header,
     &toy_exit
 };
 
@@ -175,24 +179,54 @@ int toy_mutex(char **args)
 
 int toy_message_queue(char **args)
 {
-    printf("Send\n");
-
     int mqretcode;
     toy_msg_t msg;
 
     if (args[1] == NULL || args[2] == NULL) {
-        printf("got\n");
         return 1;
     }
 
     if (!strcmp(args[1], "camera")) {
-        printf("camera\n");
         msg.msg_type = atoi(args[2]);
         msg.param1 = 0;
         msg.param2 = 0;
-        mqretcode = mq_send(camera_queue, (char *)&msg, sizeof(toy_msg_t), 0);
+        mqretcode = mq_send(camera_queue, (char *)&msg, sizeof(msg), 0);
         assert(mqretcode == 0);
     }
+
+    return 1;
+}
+
+int toy_read_elf_header(char **args)
+{
+    int mqretcode;
+    toy_msg_t msg;
+    int in_fd;
+    char *contents = NULL;
+    size_t contents_sz;
+    struct stat st;
+    Elf64Hdr elf_header;
+
+    in_fd = open("./sample/sample.elf", O_RDONLY);
+	if ( in_fd < 0 ) {
+        printf("cannot open ./sample/sample.elf\n");
+        return 1;
+    }
+    void *addr = mmap(NULL, sizeof(Elf64Hdr), PROT_READ, MAP_PRIVATE, in_fd, 0);
+    memcpy(&elf_header, addr, sizeof(Elf64Hdr));
+
+        printf("ELF file information\n");
+    printf("    Type: %d\n", elf_header.e_type);
+    printf("    Machine: %d\n", elf_header.e_machine);
+    printf("    Entry point address: %d\n", elf_header.e_entry);
+
+    printf("    Program header offset: %d\n", elf_header.e_phoff);
+    printf("    Number of program headers: %d\n", elf_header.e_phnum);
+    printf("    Size of program headers: %d\n", elf_header.e_phentsize);
+
+    printf("    Section of section headers: %d\n", elf_header.e_shoff);
+    printf("    Number of section headers: %d\n", elf_header.e_shnum);
+    printf("    Size of section headers: %d\n", elf_header.e_shentsize);
 
     return 1;
 }
