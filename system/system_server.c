@@ -4,6 +4,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <pthread.h>
+#include <mqueue.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -12,9 +13,16 @@
 
 #include <camera_HAL.hpp>
 
+#include <toy_message.h>
+
 pthread_mutex_t system_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  system_loop_cond  = PTHREAD_COND_INITIALIZER;
 bool            system_loop_exit = false;    ///< true if main loop should exit
+
+static mqd_t watchdog_queue;
+static mqd_t monitor_queue;
+static mqd_t disk_queue;
+static mqd_t camera_queue;
 
 static int toy_timer = 0;
 
@@ -49,11 +57,13 @@ int posix_sleep_ms(unsigned int timeout_ms)
 void *watchdog_thread(void* arg)
 {
     char *s = arg;
+    int mqretcode;
+    toy_msg_t msg;
 
     printf("%s", s);
 
     while (1) {
-        posix_sleep_ms(5000);
+        mq_receive(watchdog_queue, (char *) &msg, sizeof msg, NULL);
     }
 
     return 0;
@@ -62,11 +72,13 @@ void *watchdog_thread(void* arg)
 void *monitor_thread(void* arg)
 {
     char *s = arg;
+    int mqretcode;
+    toy_msg_t msg;
 
     printf("%s", s);
 
     while (1) {
-        posix_sleep_ms(5000);
+        mq_receive(monitor_queue, (char *) &msg, sizeof msg, NULL);
     }
 
     return 0;
@@ -79,38 +91,39 @@ void *disk_service_thread(void* arg)
     char buf[1024];
     char cmd[]="df -h ./" ;
 
+    int mqretcode;
+    toy_msg_t msg;
+
     printf("%s", s);
 
-    while (1) {
-        /* popen 사용하여 10초마다 disk 잔여량 출력
-         * popen으로 shell을 실행하면 성능과 보안 문제가 있음
-         * 향후 파일 관련 시스템 콜 시간에 개선,
-         * 하지만 가끔 빠르게 테스트 프로그램 또는 프로토 타입 시스템 작성 시 유용
-         */
-        apipe = popen(cmd, "r");
-
-        printf("\n");
-        while(fgets(buf, 1024, apipe))
-            printf("%s", buf);
-
-        pclose(apipe);
-        posix_sleep_ms(10000);
+    while (1) 
+    {
+        mq_receive(disk_queue, (char *) &msg, sizeof msg, NULL);
     }
 
     return 0;
 }
 
+#define CAMERA_TAKE_PICTURE 1
+
 void *camera_service_thread(void* arg)
 {
     char *s = arg;
+    int mqretcode;
+    toy_msg_t msg;
 
     printf("%s", s);
 
-   toy_camera_open();
-   toy_camera_take_picture();
+    toy_camera_open();
+
+    ssize_t t;
 
     while (1) {
-        posix_sleep_ms(5000);
+        t = mq_receive(camera_queue, (char *) &msg, sizeof(toy_msg_t), 0);
+        printf("param1 : %d\n", msg.param1);
+        printf("param2 : %d\n", msg.param2);
+        if(msg.msg_type == CAMERA_TAKE_PICTURE)
+            toy_camera_take_picture();
     }
 
     return 0;
@@ -136,6 +149,11 @@ int system_server()
     signal(SIGALRM, timer_expire_signal_handler);
     /* 10초 타이머 등록 */
     set_periodic_timer(10, 0);
+
+    watchdog_queue = mq_open("/watchdog_queue", O_RDWR);
+    monitor_queue = mq_open("/monitor_queue", O_RDWR);
+    disk_queue = mq_open("/disk_queue", O_RDWR);
+    camera_queue = mq_open("/camera_queue", O_RDWR);
 
     pthread_t watchdog_thread_tid, monitor_thread_tid, disk_service_thread_tid, camera_service_thread_tid;
     pthread_attr_t attr;
