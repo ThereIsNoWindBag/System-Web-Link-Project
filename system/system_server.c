@@ -17,7 +17,7 @@
 #include <input.h>
 #include <web_server.h>
 
-#include <camera_HAL.hpp>
+#include <hardware.h>
 
 #include <toy_message.h>
 #include <shared_memory.h>
@@ -156,7 +156,7 @@ void *monitor_thread(void* arg)
         }
         if (msg.msg_type == DUMP_STATE)
         {
-            dumpstate();
+            //dumpstate();
         }
     }
 
@@ -239,10 +239,17 @@ void *camera_service_thread(void* arg)
     char *s = arg;
     int mqretcode;
     toy_msg_t msg;
+    hw_module_t *module = NULL;
+    int res;
 
     printf("%s", s);
-
-    toy_camera_open();
+    // 여기서 동적으로 심볼을 로딩 합니다.
+    res = hw_get_camera_module((const hw_module_t **)&module);
+    assert(res == 0);
+    printf("Camera module name: %s\n", module->name);
+    printf("Camera module tag: %d\n", module->tag);
+    printf("Camera module id: %s\n", module->id);
+    module->open();
 
     ssize_t t;
 
@@ -251,9 +258,9 @@ void *camera_service_thread(void* arg)
         printf("param1 : %d\n", msg.param1);
         printf("param2 : %d\n", msg.param2);
         if(msg.msg_type == CAMERA_TAKE_PICTURE)
-            toy_camera_take_picture();
+            module->take_picture();
         if(msg.msg_type == DUMP_STATE)
-            toy_camera_dump();
+            module->dump();
     }
 
     return 0;
