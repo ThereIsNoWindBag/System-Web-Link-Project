@@ -25,6 +25,7 @@
 #define TOY_TOK_BUFSIZE 64
 #define TOY_TOK_DELIM " \t\r\n\a"
 #define TOY_BUFFSIZE 1024
+#define DUMP_STATE 2
 
 static int shmid;
 
@@ -132,6 +133,7 @@ int toy_mutex(char **args);
 int toy_shell(char **args);
 int toy_message_queue(char **args);
 int toy_read_elf_header(char **args);
+int toy_dump_state(char **args);
 int toy_exit(char **args);
 
 char *builtin_str[] = {
@@ -140,6 +142,7 @@ char *builtin_str[] = {
     "sh",
     "mq",
     "elf",
+    "dump",
     "exit"
 };
 
@@ -149,6 +152,7 @@ int (*builtin_func[]) (char **) = {
     &toy_shell,
     &toy_message_queue,
     &toy_read_elf_header,
+    &toy_dump_state,
     &toy_exit
 };
 
@@ -231,6 +235,22 @@ int toy_read_elf_header(char **args)
     return 1;
 }
 
+int toy_dump_state(char **args)
+{
+    int mqretcode;
+    toy_msg_t msg;
+
+    msg.msg_type = DUMP_STATE;
+    msg.param1 = 0;
+    msg.param2 = 0;
+    mqretcode = mq_send(camera_queue, (char *)&msg, sizeof(msg), 0);
+    assert(mqretcode == 0);
+    mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
+    assert(mqretcode == 0);
+
+    return 1;
+}
+
 int toy_exit(char **args)
 {
     return 0;
@@ -247,10 +267,12 @@ int toy_shell(char **args)
             perror("toy");
         }
         exit(EXIT_FAILURE);
-    } else if (pid < 0) {
+    } 
+    else if (pid < 0) {
         perror("toy");
-    } else
-{
+    } 
+    else
+    {
         do
         {
             waitpid(pid, &status, WUNTRACED);

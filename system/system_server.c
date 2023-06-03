@@ -24,6 +24,7 @@
 
 #define BUF_LEN 1024
 #define TOY_TEST_FS "./fs"
+#define DUMP_STATE 2
 
 pthread_mutex_t system_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  system_loop_cond  = PTHREAD_COND_INITIALIZER;
@@ -97,6 +98,27 @@ void *watchdog_thread(void* arg)
     return 0;
 }
 
+void dumpstate()
+{
+    char *arr[] = {"/proc/version", "/proc/meminfo", "/proc/vmstat", "/proc/zoneinfo", "/proc/buddyinfo", "/proc/net/dev", "/proc/net/route", "/proc/net/ipv6_route", "/proc/interrupts"};
+
+    for(int i = 0; i < 9; i++)
+    {
+        int fd = open(arr[i], O_RDONLY);
+        char buffer[1024];
+
+        for (;;) {
+            int ret = read(fd, buffer, sizeof(buffer));
+            if (ret > 0) {
+                ret = write(1, buffer, ret);
+            }
+            if (ret <= 0) break;
+        }
+
+        close(fd);
+    }
+}
+
 #define SENSOR_DATA 2
 
 void *monitor_thread(void* arg)
@@ -131,6 +153,10 @@ void *monitor_thread(void* arg)
             printf("temp: %d\n", data.temp);
             printf("press: %d\n", data.press);
             printf("humidity: %d\n", data.humidity);
+        }
+        if (msg.msg_type == DUMP_STATE)
+        {
+            dumpstate();
         }
     }
 
@@ -226,6 +252,8 @@ void *camera_service_thread(void* arg)
         printf("param2 : %d\n", msg.param2);
         if(msg.msg_type == CAMERA_TAKE_PICTURE)
             toy_camera_take_picture();
+        if(msg.msg_type == DUMP_STATE)
+            toy_camera_dump();
     }
 
     return 0;
