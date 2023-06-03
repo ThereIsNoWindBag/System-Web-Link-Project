@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <mqueue.h>
 
 #include <system_server.h>
 #include <gui.h>
 #include <input.h>
 #include <web_server.h>
+#include <toy_message.h>
 
 #define NUM_MESSAGES 10
 

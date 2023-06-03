@@ -90,7 +90,7 @@ void *sensor_thread(void* arg)
 
     printf("%s", s);
 
-    void *addr = shmat(shmid, NULL, 0);
+    // void *addr = shmat(shmid, NULL, 0);
 
     // send shm_key
     msg.msg_type = 1;
@@ -105,7 +105,7 @@ void *sensor_thread(void* arg)
     data.humidity = 0;
 
     while (1) {
-        memcpy(addr, &data, sizeof(shm_sensor_t));
+        // memcpy(addr, &data, sizeof(shm_sensor_t));
         
         msg.msg_type = 2;
         msg.param1 = 0;
@@ -371,9 +371,13 @@ int input()
     shmid = shmget(IPC_PRIVATE, sizeof(shm_sensor_t), IPC_CREAT | 0666);
 
     watchdog_queue = mq_open("/watchdog_queue", O_RDWR);
+    assert(watchdog_queue);
     monitor_queue = mq_open("/monitor_queue", O_RDWR);
+    assert(monitor_queue);
     disk_queue = mq_open("/disk_queue", O_RDWR);
+    assert(disk_queue);
     camera_queue = mq_open("/camera_queue", O_RDWR);
+    assert(camera_queue);
 
     pthread_t command_thread_tid, sensor_thread_tid;
     pthread_attr_t attr;

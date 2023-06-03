@@ -13,7 +13,7 @@ CXX = g++
 CXXLIBS = -lpthread -lm -lrt
 CXXFLAGS = -g -O0 -std=c++14
 
-objects = ./obj/main.o system_server.o web_server.o input.o gui.o
+objects = main.o system_server.o web_server.o input.o gui.o
 cxx_objects = camera_HAL.o ControlThread.o
 
 $(TARGET): $(objects) $(cxx_objects)

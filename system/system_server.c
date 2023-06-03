@@ -8,6 +8,9 @@
 #include <semaphore.h>
 #include <sys/shm.h>
 #include <assert.h>
+#include <dirent.h>
+#include <sys/inotify.h>
+#include <sys/stat.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -18,6 +21,9 @@
 
 #include <toy_message.h>
 #include <shared_memory.h>
+
+#define BUF_LEN 1024
+#define TOY_TEST_FS "./fs"
 
 pthread_mutex_t system_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  system_loop_cond  = PTHREAD_COND_INITIALIZER;
@@ -106,7 +112,7 @@ void *monitor_thread(void* arg)
     assert(mqretcode >= 0);
     shmid = msg.param1;
 
-    void *addr = shmat(shmid, NULL, 0);
+    // void *addr = shmat(shmid, NULL, 0);
 
     shm_sensor_t data;
 
@@ -120,7 +126,7 @@ void *monitor_thread(void* arg)
         printf("msg.param2: %d\n", msg.param2);
 
         if (msg.msg_type == SENSOR_DATA) {
-            memcpy(&data, addr, sizeof(shm_sensor_t));
+            // memcpy(&data, addr, sizeof(shm_sensor_t));
 
             printf("temp: %d\n", data.temp);
             printf("press: %d\n", data.press);
@@ -131,21 +137,70 @@ void *monitor_thread(void* arg)
     return 0;
 }
 
+// https://stackoverflow.com/questions/21618260/how-to-get-total-size-of-subdirectories-in-c
+static long get_directory_size(char *dirname)
+{
+    DIR *dir = opendir(dirname);
+    if (dir == 0)
+        return 0;
+
+    struct dirent *dit;
+    struct stat st;
+    long size = 0;
+    long total_size = 0;
+    char filePath[1024];
+
+    while ((dit = readdir(dir)) != NULL) {
+        if ( (strcmp(dit->d_name, ".") == 0) || (strcmp(dit->d_name, "..") == 0) )
+            continue;
+
+        sprintf(filePath, "%s/%s", dirname, dit->d_name);
+        if (lstat(filePath, &st) != 0)
+            continue;
+        size = st.st_size;
+
+        if (S_ISDIR(st.st_mode)) {
+            long dir_size = get_directory_size(filePath) + size;
+            total_size += dir_size;
+        } else {
+            total_size += size;
+        }
+    }
+    return total_size;
+}
+
 void *disk_service_thread(void* arg)
 {
     char *s = arg;
-    FILE* apipe;
-    char buf[1024];
-    char cmd[]="df -h ./" ;
-
-    int mqretcode;
-    toy_msg_t msg;
+    int inotifyFd, wd, j;
+    char buf[BUF_LEN] __attribute__ ((aligned(8)));
+    ssize_t numRead;
+    char *p;
+    struct inotify_event *event;
+    int total_size;
 
     printf("%s", s);
 
-    while (1) 
+    inotifyFd = inotify_init();
+
+    wd = inotify_add_watch(inotifyFd, TOY_TEST_FS, IN_CREATE);
+
+    while(1)
     {
-        mq_receive(disk_queue, (char *) &msg, sizeof msg, NULL);
+        numRead = read(inotifyFd, buf, BUF_LEN);
+
+        if(numRead == 0)
+        {
+            printf("read() from inotify fd returned 0!\n");
+        }
+
+        for (p = buf; p < buf + numRead;)
+        {
+            event = (struct inotify_event *) p;
+            p += sizeof(struct inotify_event) + event->len;
+        }
+        total_size = get_directory_size(TOY_TEST_FS);
+        printf("directory size: %d\n", total_size);
     }
 
     return 0;
