@@ -8,7 +8,7 @@ HAL = ./hal
 INCLUDES = -I$(SYSTEM) -I$(UI) -I$(WEB_SERVER) -I$(HAL) -I./
 
 CC = gcc
-CXXLIBS = -lpthread -lm -lrt -Wl,--no-as-needed -ldl
+CXXLIBS = -lpthread -lm -lrt -Wl,--no-as-needed -ldl -lseccomp
 CXXFLAGS = $(INCLUDEDIRS) -g -O0 -std=c++14
 CXX = g++
 

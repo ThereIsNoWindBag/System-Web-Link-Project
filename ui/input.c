@@ -14,6 +14,8 @@
 #include <assert.h>
 #include <sys/shm.h>
 #include <sys/mman.h>
+#include <linux/seccomp.h>
+#include <seccomp.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -134,6 +136,7 @@ int toy_shell(char **args);
 int toy_message_queue(char **args);
 int toy_read_elf_header(char **args);
 int toy_dump_state(char **args);
+int toy_mincore(char **args);
 int toy_exit(char **args);
 
 char *builtin_str[] = {
@@ -143,6 +146,7 @@ char *builtin_str[] = {
     "mq",
     "elf",
     "dump",
+    "mincore",
     "exit"
 };
 
@@ -153,6 +157,7 @@ int (*builtin_func[]) (char **) = {
     &toy_message_queue,
     &toy_read_elf_header,
     &toy_dump_state,
+    &toy_mincore,
     &toy_exit
 };
 
@@ -250,6 +255,20 @@ int toy_dump_state(char **args)
 
     return 1;
 }
+
+int toy_mincore(char **args)
+{
+    unsigned char vec[20];
+    int res;
+    size_t page = sysconf(_SC_PAGESIZE);
+    void *addr = mmap(NULL, 20 * page, PROT_READ | PROT_WRITE,
+                    MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    res = mincore(addr, 10 * page, vec);
+    assert(res == 0);
+
+    return 1;
+}
+
 
 int toy_exit(char **args)
 {
@@ -380,6 +399,22 @@ int input()
 {
     printf("나 input 프로세스!\n");
 
+    // seccomp
+    scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_ALLOW);
+
+    /* Cause clone() and fork() to fail, each with different errors */
+
+    int rc = seccomp_rule_add(ctx, SCMP_ACT_ERRNO(EPERM), SCMP_SYS(mincore), 0);
+
+    /* Install the seccomp filter into the kernel */
+
+    rc = seccomp_load(ctx);
+
+    /* Free the user-space seccomp filter state */
+
+    seccomp_release(ctx);
+
+    // signal
     struct sigaction sa;
     memset(&sa, 0, sizeof(sigaction));
     sigemptyset(&sa.sa_mask);
