@@ -53,6 +53,12 @@ int main()
     spid = create_system_server();
     printf("웹 서버를 생성합니다.\n");
     wpid = create_web_server();
+    if(wpid == -1)
+    {
+        kill(spid, 9);
+        return 0;
+    }
+        
     printf("입력 프로세스를 생성합니다.\n");
     ipid = create_input();
     printf("GUI를 생성합니다.\n");
