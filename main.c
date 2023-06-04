@@ -55,13 +55,13 @@ int main()
     wpid = create_web_server();
     printf("입력 프로세스를 생성합니다.\n");
     ipid = create_input();
-    printf("GUI를 생성합니다.\n");
-    gpid = create_gui();
+    // printf("GUI를 생성합니다.\n");
+    // gpid = create_gui();
 
-    for(int i = 0; i < 4; i++)
-    {
-        waitpid(0, &status, 0);
-    }
+    waitpid(spid, &status, 0);
+    waitpid(gpid, &status, 0);
+    waitpid(ipid, &status, 0);
+    waitpid(wpid, &status, 0);
 
     mq_close(watchdog_queue);
     mq_close(monitor_queue);
