@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <sys/prctl.h>
 #include <signal.h>
@@ -11,6 +12,7 @@
 #include <dirent.h>
 #include <sys/inotify.h>
 #include <sys/stat.h>
+#include <sched.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -142,17 +144,17 @@ void *monitor_thread(void* arg)
         mqretcode = (int)mq_receive(monitor_queue, (void *)&msg, sizeof(toy_msg_t), 0);
         assert(mqretcode >= 0);
 
-        printf("monitor_thread: 메시지가 도착했습니다.\n");
-        printf("msg.type: %d\n", msg.msg_type);
-        printf("msg.param1: %d\n", msg.param1);
-        printf("msg.param2: %d\n", msg.param2);
+        // printf("monitor_thread: 메시지가 도착했습니다.\n");
+        // printf("msg.type: %d\n", msg.msg_type);
+        // printf("msg.param1: %d\n", msg.param1);
+        // printf("msg.param2: %d\n", msg.param2);
 
         if (msg.msg_type == SENSOR_DATA) {
             // memcpy(&data, addr, sizeof(shm_sensor_t));
 
-            printf("temp: %d\n", data.temp);
-            printf("press: %d\n", data.press);
-            printf("humidity: %d\n", data.humidity);
+            // printf("temp: %d\n", data.temp);
+            // printf("press: %d\n", data.press);
+            // printf("humidity: %d\n", data.humidity);
         }
         if (msg.msg_type == DUMP_STATE)
         {
@@ -266,6 +268,25 @@ void *camera_service_thread(void* arg)
     return 0;
 }
 
+void *engine_thread(void* arg)
+{
+    struct sched_param sp;
+    cpu_set_t cpu_set;
+    sp.sched_priority = 50;
+    CPU_ZERO(&cpu_set);
+    CPU_SET(0, &cpu_set);
+
+    sched_setscheduler(0, SCHED_RR, &sp);
+    sched_setaffinity(0, sizeof(cpu_set), &cpu_set);
+    
+    while (1) {
+        ;
+    }
+
+    return 0;
+}
+
+
 int system_server()
 {
     printf("나 system_server 프로세스!\n");
@@ -279,7 +300,7 @@ int system_server()
     camera_queue = mq_open("/camera_queue", O_RDWR);
 
     // 쓰레드용 변수
-    pthread_t watchdog_thread_tid, monitor_thread_tid, disk_service_thread_tid, camera_service_thread_tid, timer_thread_tid;
+    pthread_t watchdog_thread_tid, monitor_thread_tid, disk_service_thread_tid, camera_service_thread_tid, timer_thread_tid, engine_thread_tid;
     pthread_attr_t attr;
 
     // 쓰레드 설정
@@ -292,6 +313,7 @@ int system_server()
     pthread_create(&disk_service_thread_tid, &attr, disk_service_thread, "disk thread initiated");
     pthread_create(&camera_service_thread_tid, &attr, camera_service_thread, "camera thread initiated");
     pthread_create(&timer_thread_tid, &attr, timer_thread, "timer thread\n");
+    pthread_create(&engine_thread_tid, &attr, engine_thread, "engine thread\n");
 
     while (1) {
         posix_sleep_ms(10000);
