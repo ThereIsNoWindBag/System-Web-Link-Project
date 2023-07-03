@@ -3,8 +3,8 @@ V = 0
 Q = $(if $(filter 1,$V),,@)
 M = $(shell printf "\033[34;1m▶\033[0m")
 
-#여기를 buildroot 툴체인으로...
-BUILDROOT_DIR=/home/user1/buildroot
+# C/C++ 컴파일러의 경로를 raspberrypi/buildroot 의 aarch64 용 컴파일러의 경로로 변경해주어야합니다.
+BUILDROOT_DIR=/home/user1/Downloads/buildroot
 TOOLCHAIN_PATH=$(BUILDROOT_DIR)/output/host/bin
 CC=$(TOOLCHAIN_PATH)/aarch64-buildroot-linux-gnu-gcc
 CXX=$(TOOLCHAIN_PATH)/aarch64-buildroot-linux-gnu-g++
