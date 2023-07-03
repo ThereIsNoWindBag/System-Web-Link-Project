@@ -15,4 +15,10 @@ typedef struct shm_sensor {
 
 extern int shm_id[SHM_KEY_MAX - SHM_KEY_BASE];
 
+void *toy_shm_create(int key, int size);
+void *toy_shm_attach(int shmid);
+int toy_shm_detach(void *ptr);
+int toy_shm_remove(int shmid);
+int toy_shm_get_keyid(int key);
+
 #endif /* _SHARED_MEMORY_H */

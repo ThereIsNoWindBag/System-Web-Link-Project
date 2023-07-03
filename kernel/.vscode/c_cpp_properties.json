@@ -1,0 +1,21 @@
+{
+  "configurations": [
+      {
+          "name": "Linux",
+          "includePath": [
+              "${workspaceFolder}/**",
+              "${workspaceFolder}/include",
+              "${workspaceFolder}/arch/arm64/include",
+              "${workspaceFolder}/arch/arm64/include/generated"
+          ],
+          "forcedInclude": [
+              "${workspaceFolder}/include/generated/autoconf.h"
+          ],
+          "defines": [
+              "__KERNEL__"
+          ],
+          "cStandard": "c11"
+      }
+  ],
+  "version": 4
+}

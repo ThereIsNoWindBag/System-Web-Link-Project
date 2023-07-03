@@ -1,35 +1,35 @@
-#include <stdio.h>
+#include <assert.h>
+#include <pthread.h>
 #include <sys/prctl.h>
 #include <execinfo.h>
 #include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <ucontext.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 #include <unistd.h>
-#include <execinfo.h>
-#include <pthread.h>
-#include <signal.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <mqueue.h>
-#include <assert.h>
-#include <sys/shm.h>
 #include <sys/mman.h>
-#include <linux/seccomp.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include <seccomp.h>
 
 #include <system_server.h>
 #include <gui.h>
 #include <input.h>
 #include <web_server.h>
+#include <execinfo.h>
 #include <toy_message.h>
 #include <shared_memory.h>
+#include <dump_state.h>
 
 #define TOY_TOK_BUFSIZE 64
 #define TOY_TOK_DELIM " \t\r\n\a"
 #define TOY_BUFFSIZE 1024
 #define DUMP_STATE 2
-
-static int shmid;
 
 typedef struct _sig_ucontext {
     unsigned long uc_flags;
@@ -46,6 +46,7 @@ static mqd_t watchdog_queue;
 static mqd_t monitor_queue;
 static mqd_t disk_queue;
 static mqd_t camera_queue;
+static shm_sensor_t *the_sensor_info = NULL;
 
 void segfault_handler(int sig_num, siginfo_t * info, void * ucontext) {
   void * array[50];
@@ -57,7 +58,7 @@ void segfault_handler(int sig_num, siginfo_t * info, void * ucontext) {
   uc = (sig_ucontext_t *) ucontext;
 
   /* Get the address at the time the signal was raised */
-  caller_address = (void *) uc->uc_mcontext.rip;  // RIP: x86_64 specific     arm_pc: ARM
+  caller_address = (void *) uc->uc_mcontext.pc;  // RIP: x86_64 specific     arm_pc: ARM
 
   fprintf(stderr, "\n");
 
@@ -90,37 +91,24 @@ void *sensor_thread(void* arg)
     int mqretcode;
     char *s = arg;
     toy_msg_t msg;
+    int shmid = toy_shm_get_keyid(SHM_KEY_SENSOR);
 
     printf("%s", s);
 
-    // void *addr = shmat(shmid, NULL, 0);
-
-    // send shm_key
-    msg.msg_type = 1;
-    msg.param1 = shmid;
-    msg.param2 = 0;
-    mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
-    assert(mqretcode == 0);
-
-    shm_sensor_t data;
-    data.temp = 0;
-    data.press = 0;
-    data.humidity = 0;
-
     while (1) {
-        // memcpy(addr, &data, sizeof(shm_sensor_t));
-        
-        msg.msg_type = 2;
-        msg.param1 = 0;
+        posix_sleep_ms(10000);
+        // 현재 고도/온도/기압 정보를  SYS V shared memory에 저장 후
+        // monitor thread에 메시지 전송한다.
+        if (the_sensor_info != NULL) {
+            the_sensor_info->temp = 35;
+            the_sensor_info->press = 55;
+            the_sensor_info->humidity = 80;
+        }
+        msg.msg_type = 1;
+        msg.param1 = shmid;
         msg.param2 = 0;
         mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
         assert(mqretcode == 0);
-
-        data.temp++;
-        data.press += 2;
-        data.humidity += 4;
-
-        posix_sleep_ms(5000);
     }
 
     return 0;
@@ -137,6 +125,7 @@ int toy_message_queue(char **args);
 int toy_read_elf_header(char **args);
 int toy_dump_state(char **args);
 int toy_mincore(char **args);
+int toy_busy(char **args);
 int toy_exit(char **args);
 
 char *builtin_str[] = {
@@ -147,6 +136,7 @@ char *builtin_str[] = {
     "elf",
     "dump",
     "mincore",
+    "busy",
     "exit"
 };
 
@@ -158,6 +148,7 @@ int (*builtin_func[]) (char **) = {
     &toy_read_elf_header,
     &toy_dump_state,
     &toy_mincore,
+    &toy_busy,
     &toy_exit
 };
 
@@ -214,28 +205,32 @@ int toy_read_elf_header(char **args)
     char *contents = NULL;
     size_t contents_sz;
     struct stat st;
-    Elf64Hdr elf_header;
+    Elf64Hdr *map;
 
     in_fd = open("./sample/sample.elf", O_RDONLY);
 	if ( in_fd < 0 ) {
         printf("cannot open ./sample/sample.elf\n");
         return 1;
     }
-    void *addr = mmap(NULL, sizeof(Elf64Hdr), PROT_READ, MAP_PRIVATE, in_fd, 0);
-    memcpy(&elf_header, addr, sizeof(Elf64Hdr));
+    /* 여기서 mmap을 이용하여 파일 내용을 읽으세요.
+     * fread 사용 X
+     */
 
-        printf("ELF file information\n");
-    printf("    Type: %d\n", elf_header.e_type);
-    printf("    Machine: %d\n", elf_header.e_machine);
-    printf("    Entry point address: %d\n", elf_header.e_entry);
-
-    printf("    Program header offset: %d\n", elf_header.e_phoff);
-    printf("    Number of program headers: %d\n", elf_header.e_phnum);
-    printf("    Size of program headers: %d\n", elf_header.e_phentsize);
-
-    printf("    Section of section headers: %d\n", elf_header.e_shoff);
-    printf("    Number of section headers: %d\n", elf_header.e_shnum);
-    printf("    Size of section headers: %d\n", elf_header.e_shentsize);
+    if (!fstat(in_fd, &st)) {
+        contents_sz = st.st_size;
+        if (!contents_sz) {
+            printf("./sample/sample.elf is empty\n");
+            return 1;
+        }
+        printf("real size: %ld\n", contents_sz);
+        map = (Elf64Hdr *)mmap(NULL, contents_sz, PROT_READ, MAP_PRIVATE, in_fd, 0);
+        printf("Object file type : %d\n", map->e_type);
+        printf("Architecture : %d\n", map->e_machine);
+        printf("Object file version : %d\n", map->e_version);
+        printf("Entry point virtual address : %ld\n", map->e_entry);
+        printf("Program header table file offset : %ld\n", map->e_phoff);
+        munmap(map, contents_sz);
+    }
 
     return 1;
 }
@@ -269,6 +264,12 @@ int toy_mincore(char **args)
     return 1;
 }
 
+int toy_busy(char **args)
+{
+    while (1)
+        ;
+    return 1;
+}
 
 int toy_exit(char **args)
 {
@@ -286,14 +287,10 @@ int toy_shell(char **args)
             perror("toy");
         }
         exit(EXIT_FAILURE);
-    } 
-    else if (pid < 0) {
+    } else if (pid < 0) {
         perror("toy");
-    } 
-    else
-    {
-        do
-        {
+    } else {
+        do {
             waitpid(pid, &status, WUNTRACED);
         } while (!WIFEXITED(status) && !WIFSIGNALED(status));
     }
@@ -378,7 +375,6 @@ void toy_loop(void)
         line = toy_read_line();
         args = toy_split_line(line);
         status = toy_execute(args);
-
         free(line);
         free(args);
     } while (status);
@@ -388,7 +384,7 @@ void *command_thread(void* arg)
 {
     char *s = arg;
 
-    printf("%s\n", s);
+    printf("%s", s);
 
     toy_loop();
 
@@ -397,53 +393,69 @@ void *command_thread(void* arg)
 
 int input()
 {
+    int retcode;
+    struct sigaction sa;
+    pthread_t command_thread_tid, sensor_thread_tid;
+    int i;
+    scmp_filter_ctx ctx;
+
     printf("나 input 프로세스!\n");
 
-    // seccomp
-    scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_ALLOW);
-
-    /* Cause clone() and fork() to fail, each with different errors */
-
-    int rc = seccomp_rule_add(ctx, SCMP_ACT_ERRNO(EPERM), SCMP_SYS(mincore), 0);
-
-    /* Install the seccomp filter into the kernel */
-
-    rc = seccomp_load(ctx);
-
-    /* Free the user-space seccomp filter state */
-
-    seccomp_release(ctx);
-
-    // signal
-    struct sigaction sa;
     memset(&sa, 0, sizeof(sigaction));
     sigemptyset(&sa.sa_mask);
 
     sa.sa_flags = SA_RESTART | SA_SIGINFO;
     sa.sa_sigaction = segfault_handler;
 
-    // input 프로세스에 seg_fault 시그널이 왔을 때 위의 코드를 실행
     sigaction(SIGSEGV, &sa, NULL); /* ignore whether it works or not */
 
-    shmid = shmget(IPC_PRIVATE, sizeof(shm_sensor_t), IPC_CREAT | 0666);
+    // 여기에 seccomp 을 이용해서 mincore 시스템 콜을 막아 주세요.
+    ctx = seccomp_init(SCMP_ACT_ALLOW);
+    if (ctx == NULL) {
+        printf("seccomp_init failed");
+        return -1;
+    }
 
+    int rc = seccomp_rule_add(ctx, SCMP_ACT_ERRNO(EPERM), SCMP_SYS(mincore), 0);
+    if (rc < 0) {
+        printf("seccomp_rule_add failed");
+        return -1;
+    }
+
+    seccomp_export_pfc(ctx, 5);
+    seccomp_export_bpf(ctx, 6);
+
+    rc = seccomp_load(ctx);
+    if (rc < 0) {
+        printf("seccomp_load failed");
+        return -1;
+    }
+    seccomp_release(ctx);
+
+    /* 센서 정보를 공유하기 위한, 시스템 V 공유 메모리를 생성한다 */
+    the_sensor_info = (shm_sensor_t *)toy_shm_create(SHM_KEY_SENSOR, sizeof(shm_sensor_t));
+    if ( the_sensor_info == (void *)-1 ) {
+        the_sensor_info = NULL;
+        printf("Error in shm_create SHMID=%d SHM_KEY_SENSOR\n", SHM_KEY_SENSOR);
+    }
+
+    /* 메시지 큐를 오픈 한다.
+     * 하지만, 사실 fork로 생성했기 때문에 파일 디스크립터 공유되었음. 따따서, extern으로 사용 가능
+    */
     watchdog_queue = mq_open("/watchdog_queue", O_RDWR);
-    assert(watchdog_queue);
+    assert(watchdog_queue != -1);
     monitor_queue = mq_open("/monitor_queue", O_RDWR);
-    assert(monitor_queue);
+    assert(monitor_queue != -1);
     disk_queue = mq_open("/disk_queue", O_RDWR);
-    assert(disk_queue);
+    assert(disk_queue != -1);
     camera_queue = mq_open("/camera_queue", O_RDWR);
-    assert(camera_queue);
+    assert(camera_queue != -1);
 
-    pthread_t command_thread_tid, sensor_thread_tid;
-    pthread_attr_t attr;
-
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-
-    pthread_create(&command_thread_tid, &attr, command_thread, "command thread initiated");
-    pthread_create(&sensor_thread_tid, &attr, sensor_thread, "sensor thread initiated");
+   /* 여기서 스레드를 생성한다. */
+    retcode = pthread_create(&command_thread_tid, NULL, command_thread, "command thread\n");
+    assert(retcode == 0);
+    retcode = pthread_create(&sensor_thread_tid, NULL, sensor_thread, "sensor thread\n");
+    assert(retcode == 0);
 
     while (1) {
         sleep(1);
@@ -452,19 +464,26 @@ int input()
     return 0;
 }
 
-pid_t create_input()
+int create_input()
 {
-    pid_t input_pid;
+    pid_t systemPid;
     const char *name = "input";
 
     printf("여기서 input 프로세스를 생성합니다.\n");
-    input_pid = fork();
 
-    if(input_pid == 0)
-    {
-        prctl(PR_SET_NAME, name, NULL, NULL, NULL);
+    /* fork 를 이용하세요 */
+    switch (systemPid = fork()) {
+    case -1:
+        printf("fork failed\n");
+    case 0:
+        /* 프로세스 이름 변경 */
+        if (prctl(PR_SET_NAME, (unsigned long) name) < 0)
+            perror("prctl()");
         input();
+        break;
+    default:
+        break;
     }
 
-    return input_pid;
+    return 0;
 }

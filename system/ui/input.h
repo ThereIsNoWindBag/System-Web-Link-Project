@@ -1,6 +1,5 @@
 #ifndef _INPUT_H
 #define _INPUT_H
-#include <sys/types.h>  /* Type definitions used by many programs */
 
 #include <stdint.h>
 
@@ -21,6 +20,7 @@ typedef struct {
   uint16_t    e_shstrndx;          /* Section header string table index */
 } Elf64Hdr;
 
-pid_t create_input();
+
+int create_input();
 
 #endif /* _INPUT_H */

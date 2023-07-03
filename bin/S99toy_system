@@ -1,0 +1,11 @@
+#!/bin/sh
+#
+# Start toy project....
+#
+
+printf "Starting toy project: "
+cd /home/user1
+./toy_system &
+[ $? = 0 ] && echo "OK" || echo "FAIL"
+
+exit $?

@@ -10,7 +10,8 @@
 #include <string.h>     /* Commonly used string-handling functions */
 #include <stdbool.h>    /* 'bool' type plus 'true' and 'false' constants */
 
-pid_t create_system_server();
+int create_system_server();
+int posix_sleep_ms(unsigned int timeout_ms);
 
 #define USEC_PER_SECOND         1000000  /* one million */ 
 #define USEC_PER_MILLISEC       1000     /* one thousand */
@@ -19,5 +20,6 @@ pid_t create_system_server();
 #define NANOSEC_PER_MILLISEC    1000000  /* one million */
 #define MILLISEC_PER_TICK       10
 #define MILLISEC_PER_SECOND     1000
+
 
 #endif /* _SYSTEM_SERVER_H */
